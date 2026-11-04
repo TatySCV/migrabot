@@ -1,247 +1,572 @@
 # Diseño de Base de Datos – Migrabot
 
-## 1. Objetivo
+## 1. Introducción
 
-Definir el modelo conceptual de datos de Migrabot, sus principales entidades, relaciones y responsabilidades.
+Este documento establece el diseño conceptual de la base de datos del sistema Migrabot.
 
-La base de datos utilizará PostgreSQL mediante Supabase.
+La solución utilizará PostgreSQL mediante Supabase como plataforma de backend.
 
-Este documento representa un diseño preliminar. La estructura física, los tipos de datos, las restricciones y las políticas de seguridad se definirán y validarán antes de crear las migraciones SQL.
+El modelo de datos estará diseñado para soportar:
 
-## 2. Entidades principales
+- Gestión de funcionarios y permisos.
+- Administración de categorías.
+- Creación y edición de flujos conversacionales.
+- Versionamiento y publicación de flujos.
+- Almacenamiento de fuentes oficiales.
+- Registro de conversaciones públicas.
+- Gestión de solicitudes de atención.
+- Envío y seguimiento de correos electrónicos.
+- Auditoría de acciones administrativas.
 
-### 2.1 admin_profiles
+El diseño prioriza la integridad de los datos, seguridad, modularidad y escalabilidad.
 
-Almacena los perfiles de los funcionarios autorizados.
+## 2. Arquitectura de datos
 
-Campos conceptuales:
-- id
-- user_id
-- full_name
-- role
-- active
-- created_at
-- updated_at
+Las entidades se organizan en cinco áreas funcionales.
 
-La autenticación se gestionará mediante Supabase Auth.
+### A. Administración y seguridad
 
-Roles previstos:
+- admin_profiles
+- admin_invitations
+- audit_logs
+
+### B. Motor de conversaciones
+
+- categories
+- flows
+- flow_versions
+- flow_nodes
+- flow_edges
+
+### C. Información oficial
+
+- official_sources
+- node_sources
+
+### D. Conversaciones públicas
+
+- conversations
+- conversation_events
+
+### E. Atención personalizada
+
+- support_requests
+- support_responses
+- email_logs
+
+Total: 15 tablas iniciales.
+
+---
+
+# 3. Definición de entidades
+
+## 3.1 admin_profiles
+
+Almacena los perfiles de los funcionarios autorizados para acceder al panel administrativo.
+
+| Campo | Tipo conceptual | Descripción |
+|---|---|---|
+| id | UUID | Identificador del perfil |
+| user_id | UUID | Referencia a Supabase Auth |
+| full_name | TEXT | Nombre completo |
+| role | TEXT | Rol asignado |
+| active | BOOLEAN | Estado de la cuenta |
+| created_at | TIMESTAMPTZ | Fecha de creación |
+| updated_at | TIMESTAMPTZ | Última modificación |
+
+Roles permitidos:
+
 - super_admin
 - editor
 - support
 
-### 2.2 categories
+Reglas:
+- Cada usuario autenticado tendrá un único perfil.
+- Los usuarios no podrán modificar su propio rol.
+- La desactivación del perfil impedirá el acceso administrativo.
+- La autenticación será gestionada por Supabase Auth.
 
-Almacena las categorías de orientación.
+## 3.2 admin_invitations
 
-Campos conceptuales:
-- id
-- name
-- description
-- icon
-- active
-- order_index
-- created_at
-- updated_at
+Registra las invitaciones enviadas a nuevos funcionarios.
 
-### 2.3 flows
+| Campo | Tipo conceptual | Descripción |
+|---|---|---|
+| id | UUID | Identificador |
+| email | TEXT | Correo invitado |
+| role | TEXT | Rol asignado |
+| invited_by | UUID | Administrador que invita |
+| status | TEXT | Estado de la invitación |
+| expires_at | TIMESTAMPTZ | Fecha de expiración |
+| accepted_at | TIMESTAMPTZ | Fecha de aceptación |
+| created_at | TIMESTAMPTZ | Fecha de creación |
 
-Representa los árboles de conversación.
+Estados:
+- pending
+- accepted
+- expired
+- revoked
 
-Campos conceptuales:
-- id
-- category_id
-- name
-- description
-- status
-- version
-- created_at
-- updated_at
+Reglas:
+- No existirán invitaciones pendientes duplicadas para un mismo correo.
+- Solo administradores autorizados podrán generar invitaciones.
+- Las invitaciones deberán tener fecha de expiración.
+- Los tokens de invitación no se almacenarán en texto plano.
+
+## 3.3 audit_logs
+
+Registra las acciones administrativas relevantes.
+
+| Campo | Tipo conceptual | Descripción |
+|---|---|---|
+| id | UUID | Identificador |
+| admin_id | UUID | Funcionario responsable |
+| action | TEXT | Acción realizada |
+| entity_type | TEXT | Tipo de entidad |
+| entity_id | UUID | Identificador afectado |
+| details | JSONB | Información complementaria |
+| created_at | TIMESTAMPTZ | Fecha del evento |
+
+Ejemplos:
+- Invitación de funcionarios.
+- Modificación de permisos.
+- Creación de categorías.
+- Modificación de flujos.
+- Publicación de versiones.
+- Asignación de solicitudes.
+- Envío de respuestas.
+
+Los registros de auditoría no podrán ser modificados por usuarios administrativos comunes.
+
+## 3.4 categories
+
+Almacena las categorías principales de orientación migratoria.
+
+| Campo | Tipo conceptual | Descripción |
+|---|---|---|
+| id | UUID | Identificador |
+| name | TEXT | Nombre |
+| description | TEXT | Descripción |
+| icon | TEXT | Identificador del icono |
+| order_index | INTEGER | Orden de visualización |
+| active | BOOLEAN | Disponibilidad |
+| created_at | TIMESTAMPTZ | Fecha de creación |
+| updated_at | TIMESTAMPTZ | Última modificación |
+
+Ejemplos:
+- Ingreso y salida de Chile.
+- Documentos de identidad y viaje.
+- Viajes con menores.
+- Personas extranjeras.
+- Tarjetas migratorias y registros.
+- Control fronterizo.
+- Situaciones especiales.
+- Medidas y restricciones.
+- Otras consultas.
+
+## 3.5 flows
+
+Representa los árboles de conversación asociados a las categorías.
+
+| Campo | Tipo conceptual | Descripción |
+|---|---|---|
+| id | UUID | Identificador |
+| category_id | UUID | Categoría asociada |
+| name | TEXT | Nombre del flujo |
+| description | TEXT | Descripción |
+| status | TEXT | Estado |
+| published_version_id | UUID | Versión publicada |
+| created_by | UUID | Creador |
+| created_at | TIMESTAMPTZ | Fecha de creación |
+| updated_at | TIMESTAMPTZ | Última modificación |
 
 Estados previstos:
 - draft
 - published
 - archived
 
-### 2.4 flow_nodes
+Reglas:
+- Un flujo pertenece a una categoría.
+- Una categoría puede contener varios flujos.
+- La versión pública será identificada mediante published_version_id.
+- Los flujos no publicados no estarán disponibles para los usuarios públicos.
 
-Almacena los nodos que componen cada flujo.
+## 3.6 flow_versions
 
-Campos conceptuales:
-- id
-- flow_id
-- node_type
-- title
-- content
-- position_x
-- position_y
-- config
-- created_at
-- updated_at
+Almacena las diferentes versiones de cada flujo.
 
-Los nodos podrán representar:
-- Inicio.
-- Pregunta.
-- Opciones.
-- Respuesta.
-- Condición.
-- Derivación.
-- Finalización.
+| Campo | Tipo conceptual | Descripción |
+|---|---|---|
+| id | UUID | Identificador |
+| flow_id | UUID | Flujo asociado |
+| version_number | INTEGER | Número de versión |
+| status | TEXT | Estado |
+| created_by | UUID | Creador |
+| published_by | UUID | Responsable de publicación |
+| published_at | TIMESTAMPTZ | Fecha de publicación |
+| created_at | TIMESTAMPTZ | Fecha de creación |
 
-La configuración adicional podrá almacenarse mediante JSONB.
+Estados:
+- draft
+- published
+- archived
 
-### 2.5 flow_edges
+Reglas:
+- Cada flujo podrá tener múltiples versiones.
+- No se permitirá modificar una versión publicada.
+- Solo el superadministrador podrá publicar.
+- La publicación generará una nueva versión.
+- Se conservarán las versiones anteriores.
+- Una publicación deberá ejecutarse mediante una operación transaccional.
 
-Representa las conexiones entre nodos.
+## 3.7 flow_nodes
 
-Campos conceptuales:
-- id
-- flow_id
-- source_node_id
-- target_node_id
-- label
+Representa los elementos que componen visualmente los árboles de conversación.
+
+| Campo | Tipo conceptual | Descripción |
+|---|---|---|
+| id | UUID | Identificador |
+| version_id | UUID | Versión asociada |
+| node_type | TEXT | Tipo de nodo |
+| title | TEXT | Título |
+| content | JSONB | Contenido del nodo |
+| config | JSONB | Configuración |
+| position_x | NUMERIC | Posición horizontal |
+| position_y | NUMERIC | Posición vertical |
+| created_at | TIMESTAMPTZ | Fecha de creación |
+
+Tipos de nodos iniciales:
+- start
+- question
+- answer
 - condition
-- created_at
+- derivation
+- end
 
-### 2.6 flow_versions
+El contenido y configuración podrán almacenarse mediante JSONB para permitir diferentes estructuras según el tipo de nodo.
 
-Almacena versiones publicadas de los flujos.
+## 3.8 flow_edges
 
-Campos conceptuales:
-- id
-- flow_id
-- version_number
-- snapshot
-- published_by
-- published_at
+Representa las conexiones entre los nodos.
 
-Permitirá recuperar versiones anteriores.
+| Campo | Tipo conceptual | Descripción |
+|---|---|---|
+| id | UUID | Identificador |
+| version_id | UUID | Versión asociada |
+| source_node_id | UUID | Nodo de origen |
+| target_node_id | UUID | Nodo de destino |
+| label | TEXT | Texto de la conexión |
+| condition | JSONB | Condición opcional |
+| created_at | TIMESTAMPTZ | Fecha de creación |
 
-### 2.7 conversations
+Reglas:
+- Ambos nodos deberán pertenecer a la misma versión.
+- No se permitirán referencias a nodos inexistentes.
+- Las conexiones deberán validarse antes de publicar.
+- No se permitirán ciclos que generen recorridos infinitos.
+- Las condiciones deberán utilizar operadores permitidos.
 
-Registra las sesiones de conversación pública.
+## 3.9 official_sources
 
-Campos conceptuales:
-- id
-- session_token
-- started_at
-- finished_at
-- status
+Almacena las fuentes oficiales que respaldan las orientaciones.
 
-No deberá almacenar información personal innecesaria.
+| Campo | Tipo conceptual | Descripción |
+|---|---|---|
+| id | UUID | Identificador |
+| title | TEXT | Título de la fuente |
+| source_type | TEXT | Tipo de fuente |
+| institution | TEXT | Institución emisora |
+| url | TEXT | Enlace oficial |
+| legal_reference | TEXT | Referencia normativa |
+| reviewed_at | TIMESTAMPTZ | Última revisión |
+| next_review_at | TIMESTAMPTZ | Próxima revisión |
+| active | BOOLEAN | Vigencia de uso |
+| created_at | TIMESTAMPTZ | Fecha de creación |
 
-### 2.8 conversation_messages
+Tipos de fuentes:
+- law
+- regulation
+- official_procedure
+- official_website
+- institutional_document
 
-Registra las interacciones relevantes de cada conversación.
+Las fuentes deberán ser verificables y proceder de organismos oficiales.
 
-Campos conceptuales:
-- id
-- conversation_id
-- node_id
-- message_type
-- content
-- created_at
+## 3.10 node_sources
 
-### 2.9 support_requests
+Relaciona los nodos de orientación con sus fuentes oficiales.
 
-Almacena las solicitudes de atención personalizada.
+| Campo | Tipo conceptual | Descripción |
+|---|---|---|
+| id | UUID | Identificador |
+| node_id | UUID | Nodo asociado |
+| source_id | UUID | Fuente asociada |
+| created_at | TIMESTAMPTZ | Fecha de creación |
 
-Campos conceptuales:
-- id
-- conversation_id
-- ticket_number
-- name
-- email
-- subject
-- description
-- status
-- assigned_to
-- created_at
-- answered_at
-- closed_at
+Reglas:
+- Un nodo podrá tener varias fuentes.
+- Una fuente podrá respaldar distintos nodos.
+- Las respuestas que entreguen orientación deberán tener fuentes asociadas.
+- Las fuentes deberán estar activas y revisadas antes de publicar.
 
-Estados previstos:
+## 3.11 conversations
+
+Registra las sesiones de interacción del chatbot público.
+
+| Campo | Tipo conceptual | Descripción |
+|---|---|---|
+| id | UUID | Identificador |
+| session_token_hash | TEXT | Identificador de sesión protegido |
+| flow_version_id | UUID | Versión utilizada |
+| status | TEXT | Estado de conversación |
+| started_at | TIMESTAMPTZ | Inicio |
+| finished_at | TIMESTAMPTZ | Finalización |
+
+Reglas:
+- El acceso público será anónimo.
+- No será necesario crear una cuenta.
+- Se utilizará un identificador aleatorio de sesión.
+- No se almacenará información personal innecesaria.
+- Se conservará la versión exacta del flujo utilizado.
+
+## 3.12 conversation_events
+
+Registra las interacciones relevantes realizadas durante una conversación.
+
+| Campo | Tipo conceptual | Descripción |
+|---|---|---|
+| id | UUID | Identificador |
+| conversation_id | UUID | Conversación asociada |
+| node_id | UUID | Nodo relacionado |
+| event_type | TEXT | Tipo de evento |
+| selected_option | TEXT | Alternativa seleccionada |
+| event_data | JSONB | Información complementaria |
+| created_at | TIMESTAMPTZ | Fecha del evento |
+
+Ejemplos:
+- Inicio de conversación.
+- Selección de categoría.
+- Selección de alternativa.
+- Visualización de respuesta.
+- Solicitud de atención.
+- Finalización del flujo.
+
+## 3.13 support_requests
+
+Registra las consultas que requieren atención de un funcionario.
+
+| Campo | Tipo conceptual | Descripción |
+|---|---|---|
+| id | UUID | Identificador |
+| conversation_id | UUID | Conversación relacionada |
+| ticket_number | TEXT | Número de solicitud |
+| name | TEXT | Nombre del solicitante |
+| email | TEXT | Correo de contacto |
+| subject | TEXT | Asunto |
+| description | TEXT | Descripción |
+| status | TEXT | Estado |
+| priority | TEXT | Prioridad |
+| assigned_to | UUID | Funcionario responsable |
+| created_at | TIMESTAMPTZ | Fecha de creación |
+| answered_at | TIMESTAMPTZ | Fecha de respuesta |
+| closed_at | TIMESTAMPTZ | Fecha de cierre |
+
+Estados:
 - pending
 - in_review
 - answered
 - closed
 
-### 2.10 support_responses
+Reglas:
+- Cada solicitud tendrá un funcionario responsable.
+- La asignación será realizada por un administrador autorizado.
+- Los funcionarios de soporte accederán a sus solicitudes asignadas.
+- Se conservará la relación con la conversación original.
+- Los datos personales estarán protegidos.
 
-Almacena las respuestas enviadas por los funcionarios.
+## 3.14 support_responses
 
-Campos conceptuales:
-- id
-- request_id
-- admin_id
-- response_content
-- email_status
-- sent_at
-- created_at
+Almacena las respuestas elaboradas por los funcionarios.
 
-## 3. Relaciones conceptuales
+| Campo | Tipo conceptual | Descripción |
+|---|---|---|
+| id | UUID | Identificador |
+| request_id | UUID | Solicitud relacionada |
+| admin_id | UUID | Funcionario responsable |
+| response_content | TEXT | Contenido de la respuesta |
+| email_status | TEXT | Estado del envío |
+| sent_at | TIMESTAMPTZ | Fecha de envío |
+| created_at | TIMESTAMPTZ | Fecha de creación |
 
-- Una categoría puede contener varios flujos.
-- Un flujo pertenece a una categoría.
-- Un flujo contiene múltiples nodos.
-- Un flujo contiene múltiples conexiones.
+Reglas:
+- Una solicitud podrá tener múltiples respuestas.
+- Las respuestas conservarán el funcionario que las elaboró.
+- El contenido enviado no podrá modificarse silenciosamente.
+- Se mantendrá un historial de atención.
+
+## 3.15 email_logs
+
+Registra los intentos de envío de correos electrónicos.
+
+| Campo | Tipo conceptual | Descripción |
+|---|---|---|
+| id | UUID | Identificador |
+| request_id | UUID | Solicitud relacionada |
+| response_id | UUID | Respuesta relacionada |
+| recipient | TEXT | Destinatario |
+| email_type | TEXT | Tipo de correo |
+| provider_message_id | TEXT | Identificador del proveedor |
+| status | TEXT | Estado del envío |
+| attempt_count | INTEGER | Cantidad de intentos |
+| sent_at | TIMESTAMPTZ | Fecha de envío |
+| created_at | TIMESTAMPTZ | Fecha de creación |
+
+Estados previstos:
+- pending
+- sent
+- failed
+
+Se implementará un mecanismo de reintento para los envíos fallidos.
+
+---
+
+# 4. Relaciones entre entidades
+
+- Un perfil de funcionario puede realizar múltiples acciones administrativas.
+- Un administrador puede generar múltiples invitaciones.
+- Una categoría puede contener múltiples flujos.
 - Un flujo puede tener múltiples versiones.
-- Una conversación contiene múltiples interacciones.
+- Una versión contiene múltiples nodos.
+- Una versión contiene múltiples conexiones.
+- Un nodo puede estar asociado a múltiples fuentes oficiales.
+- Una fuente oficial puede respaldar múltiples nodos.
+- Una conversación contiene múltiples eventos.
 - Una conversación puede generar solicitudes de atención.
-- Una solicitud puede tener múltiples respuestas.
-- Un funcionario puede gestionar múltiples solicitudes.
+- Una solicitud tiene un funcionario responsable.
+- Una solicitud puede contener múltiples respuestas.
+- Una solicitud puede generar múltiples registros de correo.
 
-## 4. Seguridad
+# 5. Reglas de integridad
 
-Se implementarán políticas Row Level Security (RLS).
+Se implementarán las siguientes restricciones:
 
-Principios:
-- Los usuarios públicos no podrán consultar datos privados.
-- Los flujos publicados podrán consultarse públicamente mediante permisos específicos.
-- Los borradores serán accesibles únicamente a administradores autorizados.
-- Las solicitudes y respuestas estarán protegidas.
-- Los funcionarios accederán según sus roles.
-- Las operaciones privilegiadas se ejecutarán desde el backend.
-- La clave service_role nunca se expondrá en el frontend.
+- Identificadores UUID como claves primarias.
+- Claves foráneas para mantener relaciones.
+- Unicidad del perfil asociado a cada usuario.
+- Unicidad de versiones dentro de cada flujo.
+- Unicidad del número de solicitud.
+- Unicidad de invitaciones pendientes por correo.
+- Validación de estados permitidos.
+- Validación de tipos de nodos.
+- Validación de conexiones entre nodos de una misma versión.
+- Protección de versiones publicadas.
+- Restricción de eliminación de entidades con dependencias relevantes.
 
-## 5. Integridad y consistencia
+Se utilizarán índices para optimizar consultas frecuentes.
 
-Se deberán implementar:
-- Claves primarias.
-- Claves foráneas.
-- Restricciones de integridad.
-- Índices para consultas frecuentes.
-- Validación de relaciones entre nodos.
-- Control de versiones.
-- Restricciones para impedir conexiones inválidas.
+# 6. Seguridad y permisos
 
-## 6. Privacidad y retención
+Se utilizará Row Level Security (RLS).
 
-Se establecerán políticas para:
-- Minimizar la información personal almacenada.
-- Limitar el acceso a los antecedentes.
-- Definir plazos de conservación.
-- Gestionar la eliminación de información cuando corresponda.
-- Registrar accesos y acciones administrativas relevantes.
+### Acceso público
 
-## 7. Migraciones
+- Consultar categorías activas.
+- Consultar flujos publicados.
+- Registrar conversaciones mediante operaciones controladas.
+- Solicitar atención mediante operaciones controladas.
 
-La estructura física de la base de datos se implementará mediante migraciones SQL versionadas en:
+No podrá:
+- Consultar borradores.
+- Leer conversaciones ajenas.
+- Consultar solicitudes de atención.
+- Leer respuestas internas.
+- Acceder a perfiles administrativos.
+
+### Superadministrador
+
+- Administración completa.
+- Invitación de funcionarios.
+- Gestión de roles.
+- Publicación de flujos.
+- Administración de categorías.
+- Consulta de solicitudes.
+- Asignación de responsables.
+- Consulta de auditoría.
+
+### Editor
+
+- Crear y modificar flujos.
+- Administrar categorías según permisos.
+- Guardar borradores.
+- Consultar fuentes oficiales.
+- No podrá publicar.
+
+### Soporte
+
+- Consultar solicitudes asignadas.
+- Revisar antecedentes.
+- Elaborar respuestas.
+- Enviar correos.
+- Consultar el historial de atención asignado.
+
+La autorización deberá verificarse en el backend y mediante políticas RLS. La interfaz no será considerada un mecanismo de seguridad.
+
+# 7. Versionamiento y publicación
+
+Los flujos tendrán versiones independientes.
+
+Proceso de publicación:
+
+1. El editor modifica un borrador.
+2. Se validan los nodos y conexiones.
+3. Se comprueba la existencia de las fuentes requeridas.
+4. El superadministrador revisa el flujo.
+5. El superadministrador autoriza su publicación.
+6. Se crea una nueva versión inmutable.
+7. Se actualiza la referencia de versión publicada.
+8. El chatbot utiliza la nueva versión.
+
+La operación deberá ejecutarse de manera transaccional.
+
+# 8. Privacidad y conservación de datos
+
+Se aplicarán los principios de:
+
+- Minimización de datos.
+- Acceso restringido.
+- Protección de información personal.
+- Retención limitada.
+- Trazabilidad de acciones.
+- Eliminación o anonimización cuando corresponda.
+
+Se establecerán plazos de conservación y procedimientos de eliminación de acuerdo con las políticas institucionales y normativa aplicable.
+
+# 9. Migraciones SQL
+
+La estructura física se implementará mediante migraciones SQL versionadas en:
 
 supabase/migrations/
 
-No se realizarán modificaciones estructurales directamente en producción sin registrarlas mediante una migración.
+Cada modificación de la base de datos deberá quedar registrada mediante una migración.
 
-## 8. Estado del diseño
+No se realizarán cambios estructurales directamente en producción sin su correspondiente registro.
 
-Modelo conceptual inicial.
+# 10. Estado del diseño
 
-Pendiente:
-- Diagrama entidad-relación definitivo.
-- Definición de tipos de datos.
-- Restricciones.
+Este documento representa el modelo conceptual inicial de Migrabot.
+
+Pendiente de definición técnica:
+
+- Tipos de datos PostgreSQL definitivos.
+- Restricciones SQL.
+- Claves foráneas.
 - Índices.
 - Políticas RLS.
-- Funciones y triggers.
-- Estrategia de publicación de flujos.
+- Funciones SQL.
+- Triggers.
+- Operaciones transaccionales.
+- Estrategia de publicación.
 - Validación de seguridad.
+- Políticas de retención.
+
+La implementación deberá realizarse después de validar el modelo físico y los permisos.
