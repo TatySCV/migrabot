@@ -1,8 +1,8 @@
 
-import DesignSystemPage from './features/design-system/DesignSystemPage'
+import HomePage from './features/home/HomePage'
 
 function App() {
-  return <DesignSystemPage />
+  return <HomePage />
 }
 
 export default App
