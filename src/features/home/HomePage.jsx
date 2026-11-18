@@ -4,6 +4,7 @@ import Footer from '../../components/layout/Footer'
 import HeroSection from './components/HeroSection'
 import AboutSection from './components/AboutSection'
 import ServiceSection from './components/ServiceSection'
+import ChatbotSection from '../../modules/chatbot/components/ChatbotSection'
 import HelpSection from './components/HelpSection'
 
 function HomePage() {
@@ -15,6 +16,7 @@ function HomePage() {
         <HeroSection />
         <AboutSection />
         <ServiceSection />
+        <ChatbotSection />
         <HelpSection />
       </main>
 

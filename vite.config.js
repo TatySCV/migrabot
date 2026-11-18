@@ -4,7 +4,9 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  base: '/migrabot/',
+  base: process.env.NODE_ENV === 'production'
+  ? '/migrabot/'
+  : '/',
   plugins: [
     react(),
     tailwindcss(),
